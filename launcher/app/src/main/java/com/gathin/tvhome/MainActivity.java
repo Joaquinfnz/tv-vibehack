@@ -440,14 +440,17 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         float w = h * 16f / 9f;
         float x = root.getWidth() - 56 * density - w;
         float y = dockTopInRoot - gap - h;
-        ViewGroup.LayoutParams lp = heroBanner.getLayoutParams();
-        if (lp.width != (int) w || lp.height != (int) h) {
+        // Place it with margins, not setX/setY: those write the translation the entry animation uses,
+        // which would snap the banner back to the top of the screen when the animation ends.
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) heroBanner.getLayoutParams();
+        if (lp.width != (int) w || lp.height != (int) h || lp.leftMargin != (int) x || lp.topMargin != (int) y) {
             lp.width = (int) w;
             lp.height = (int) h;
+            lp.leftMargin = (int) x;
+            lp.topMargin = (int) y;
+            lp.gravity = Gravity.TOP | Gravity.START;
             heroBanner.setLayoutParams(lp);
         }
-        heroBanner.setX(x);
-        heroBanner.setY(y);
         ambientGlow.setGradientCenter((x + w / 2f) / root.getWidth(), (y + h / 2f) / root.getHeight());
         if (!changed) return;
         Runnable swap = () -> {
