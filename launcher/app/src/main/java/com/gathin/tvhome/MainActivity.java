@@ -249,7 +249,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // Hide the glass when focus leaves the tiles.
         getWindow().getDecorView().getViewTreeObserver().addOnGlobalFocusChangeListener((oldF, newF) -> {
             boolean onTile = newF != null && newF.getId() == R.id.card;
-            if (!onTile) hideGlass();
+            if (!onTile) {
+                hideGlass();
+                hideHero();   // the shelf never sits under the top bar while you use it
+            }
         });
 
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
@@ -419,12 +422,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      * glow centred behind it. Apps without a banner get their icon on a panel of their colour.
      */
     private void placeBanner(int position, float dockTopInRoot, int color, boolean changed) {
-        View topBar = findViewById(R.id.leftBlock);
-        Rect tb = new Rect(0, 0, topBar.getWidth(), topBar.getHeight());
-        root.offsetDescendantRectToMyCoords(topBar, tb);
+        // Lowest point of the top bar (clock block and the pills), in this window's coordinates.
+        int[] rootAt = new int[2], at = new int[2];
+        root.getLocationInWindow(rootAt);
+        float topLimit = 0;
+        for (int id : new int[]{R.id.leftBlock, R.id.topButtons}) {
+            View v = findViewById(id);
+            v.getLocationInWindow(at);
+            topLimit = Math.max(topLimit, at[1] - rootAt[1] + v.getHeight());
+        }
         float gap = 26 * density;
-        float h = Math.min(210 * density, dockTopInRoot - gap - tb.bottom - 24 * density);
-        if (h < 80 * density) {   // small screen: no room, keep only the name
+        float h = Math.min(150 * density, dockTopInRoot - gap - topLimit - 48 * density);
+        if (topLimit <= 0 || h < 80 * density) {   // top bar not laid out yet, or no room: keep only the name
             heroBanner.animate().alpha(0f).setDuration(120).start();
             return;
         }
