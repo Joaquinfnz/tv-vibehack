@@ -93,7 +93,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private static boolean airplayStarted;
     private static final int[] COLUMN_OPTIONS = {4, 5, 6};
     private static final int[] SAVER_MINUTES = {5, 10, 15, 30, 0};
-    private ImageView heroBanner;
+    /** Two banner views so the outgoing and incoming app cross-fade instead of blinking through empty. */
+    private ImageView heroBanner, heroBannerB, bannerFront;
     private View nightDim;
     private DockDecoration dockDecoration;
     /** Drawable the background shows now, so the minute tick does not decode the same image again. */
@@ -152,13 +153,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         ambient = findViewById(R.id.ambient);
         heroName = findViewById(R.id.heroName);
         heroBanner = findViewById(R.id.heroBanner);
-        heroBanner.setOutlineProvider(new ViewOutlineProvider() {
+        heroBannerB = findViewById(R.id.heroBannerB);
+        bannerFront = heroBanner;
+        ViewOutlineProvider rounded = new ViewOutlineProvider() {
             @Override
             public void getOutline(View view, Outline outline) {
                 outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), 20f * density);
             }
-        });
-        heroBanner.setClipToOutline(true);
+        };
+        for (ImageView b : new ImageView[]{heroBanner, heroBannerB}) {
+            b.setOutlineProvider(rounded);
+            b.setClipToOutline(true);
+        }
         nightDim = findViewById(R.id.nightDim);
         ambientGlow = new GradientDrawable();
         ambientGlow.setGradientType(GradientDrawable.RADIAL_GRADIENT);
@@ -275,6 +281,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         heroShown = false;
         heroName.setAlpha(0f);
         heroBanner.setAlpha(0f);
+        heroBannerB.setAlpha(0f);
         ambient.setAlpha(0f);
         resumed = true;
         // Read these before reload(): rebinding can move focus to the first tile and overwrite them.
@@ -434,45 +441,80 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         float gap = 26 * density;
         float h = Math.min(150 * density, dockTopInRoot - gap - topLimit - 48 * density);
         if (topLimit <= 0 || h < 80 * density) {   // top bar not laid out yet, or no room: keep only the name
-            heroBanner.animate().alpha(0f).setDuration(120).start();
+            fadeBanners(120);
             return;
         }
         float w = h * 16f / 9f;
         float x = root.getWidth() - 56 * density - w;
         float y = dockTopInRoot - gap - h;
-        // Place it with margins, not setX/setY: those write the translation the entry animation uses,
-        // which would snap the banner back to the top of the screen when the animation ends.
-        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) heroBanner.getLayoutParams();
-        if (lp.width != (int) w || lp.height != (int) h || lp.leftMargin != (int) x || lp.topMargin != (int) y) {
-            lp.width = (int) w;
-            lp.height = (int) h;
-            lp.leftMargin = (int) x;
-            lp.topMargin = (int) y;
-            lp.gravity = Gravity.TOP | Gravity.START;
-            heroBanner.setLayoutParams(lp);
+        // Place it with margins, not setX/setY: those write the translation the animations use,
+        // which would snap the banner back to the top of the screen when an animation ends.
+        for (ImageView b : new ImageView[]{heroBanner, heroBannerB}) {
+            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) b.getLayoutParams();
+            if (lp.width != (int) w || lp.height != (int) h || lp.leftMargin != (int) x || lp.topMargin != (int) y) {
+                lp.width = (int) w;
+                lp.height = (int) h;
+                lp.leftMargin = (int) x;
+                lp.topMargin = (int) y;
+                lp.gravity = Gravity.TOP | Gravity.START;
+                b.setLayoutParams(lp);
+            }
         }
         ambientGlow.setGradientCenter((x + w / 2f) / root.getWidth(), (y + h / 2f) / root.getHeight());
         if (!changed) return;
-        Runnable swap = () -> {
-            if (adapter.hasBannerAt(position)) {
-                heroBanner.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                heroBanner.setPadding(0, 0, 0, 0);
-                heroBanner.setBackground(null);
-            } else {
-                heroBanner.setScaleType(ImageView.ScaleType.FIT_CENTER);
-                int p = (int) (h * 0.28f);
-                heroBanner.setPadding(p, p, p, p);
-                GradientDrawable panel = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                        new int[]{0xCC000000 | (color & 0xFFFFFF), 0xCC000000 | (darker(color) & 0xFFFFFF)});
-                heroBanner.setBackground(panel);
-            }
-            heroBanner.setImageDrawable(adapter.bannerAt(position));
-            heroBanner.setTranslationY(10 * density);
-            heroBanner.animate().alpha(1f).translationY(0f).setDuration(260)
-                    .setInterpolator(new DecelerateInterpolator(1.6f)).start();
-        };
-        if (heroBanner.getAlpha() > 0f) heroBanner.animate().alpha(0f).setDuration(110).withEndAction(swap).start();
-        else swap.run();
+
+        ImageView out = bannerFront;
+        ImageView in = out == heroBanner ? heroBannerB : heroBanner;
+        if (adapter.hasBannerAt(position)) {
+            in.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            in.setPadding(0, 0, 0, 0);
+            in.setBackground(null);
+        } else {
+            in.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            int p = (int) (h * 0.28f);
+            in.setPadding(p, p, p, p);
+            in.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                    new int[]{0xCC000000 | (color & 0xFFFFFF), 0xCC000000 | (darker(color) & 0xFFFFFF)}));
+        }
+        in.setImageDrawable(adapter.bannerAt(position));
+        in.animate().cancel();
+        in.setTranslationZ(1f);   // incoming draws over outgoing
+        out.setTranslationZ(0f);
+        boolean outVisible = out.getAlpha() > 0.01f;
+        DecelerateInterpolator ease = new DecelerateInterpolator(2f);
+        if (outVisible) {
+            // Moving along the dock: the new banner glides in from the side you moved toward while the old
+            // one drifts the other way, both cross-fading, a little like turning a page.
+            float dir = AppAdapter.lastDx != 0 ? AppAdapter.lastDx : 1;
+            float shift = 28 * density;
+            in.setAlpha(0f);
+            in.setTranslationX(dir * shift);
+            in.setTranslationY(0f);
+            in.setScaleX(0.97f);
+            in.setScaleY(0.97f);
+            in.animate().alpha(1f).translationX(0f).scaleX(1f).scaleY(1f)
+                    .setDuration(340).setInterpolator(ease).start();
+            out.animate().cancel();
+            out.animate().alpha(0f).translationX(-dir * shift).scaleX(0.97f).scaleY(0.97f)
+                    .setDuration(260).setInterpolator(ease).start();
+        } else {
+            // First appearance: rise into place.
+            in.setAlpha(0f);
+            in.setTranslationX(0f);
+            in.setTranslationY(14 * density);
+            in.setScaleX(0.96f);
+            in.setScaleY(0.96f);
+            in.animate().alpha(1f).translationY(0f).scaleX(1f).scaleY(1f)
+                    .setDuration(380).setInterpolator(ease).start();
+        }
+        bannerFront = in;
+    }
+
+    private void fadeBanners(long ms) {
+        for (ImageView b : new ImageView[]{heroBanner, heroBannerB}) {
+            b.animate().cancel();
+            b.animate().alpha(0f).scaleX(0.98f).scaleY(0.98f).setDuration(ms).start();
+        }
     }
 
     private static int darker(int color) {
@@ -486,7 +528,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (!heroShown) return;
         heroShown = false;
         heroName.animate().alpha(0f).setDuration(160).start();
-        heroBanner.animate().alpha(0f).setDuration(160).start();
+        fadeBanners(180);
         ambient.animate().alpha(0f).setDuration(300).start();
     }
 

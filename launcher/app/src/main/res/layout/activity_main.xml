@@ -29,6 +29,15 @@
         android:elevation="18dp"
         android:contentDescription="@null" />
 
+    <ImageView
+        android:id="@+id/heroBannerB"
+        android:layout_width="10dp"
+        android:layout_height="10dp"
+        android:alpha="0"
+        android:scaleType="centerCrop"
+        android:elevation="18dp"
+        android:contentDescription="@null" />
+
     <!-- Top shelf: the focused dock app's name, positioned above the dock in code. -->
     <TextView
         android:id="@+id/heroName"
