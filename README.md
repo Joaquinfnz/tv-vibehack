@@ -7,7 +7,9 @@ screen with a clean launcher that looks like an Apple TV. No root, no cable, not
 and a one-line restore if you change your mind.
 
 > **This fork** ([Gathin23/tv-vibehack](https://github.com/Gathin23/tv-vibehack) + extras) adds to the launcher:
-> weather beside the clock, 15 wallpapers (incl. automatic day/night) and a **Customize** menu,
+> an Aerial-style screensaver, a tvOS-like **Control Center** with a live wallpaper picker, a top shelf with the
+> focused app's banner and ambient colour, tile depth/tilt on focus, night mode,
+> weather beside the clock, 15 wallpapers (incl. automatic day/night),
 > a dock with your most recent apps, hide-an-app, 4/5/6 columns, a clearer liquid-glass selector,
 > an optional accessibility service that keeps this home on top of an operator launcher
 > (no ADB needed), and AirPlay-receiver start-up. Spanish and English.

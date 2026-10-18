@@ -55,4 +55,16 @@
     <string name="bg_paine_dawn">Paine · Dawn</string>
     <string name="bg_paine_lake">Paine · Lake</string>
     <string name="bg_paine_snow">Paine · Snow</string>
+    <string name="section_look">Appearance</string>
+    <string name="section_saver">Screensaver</string>
+    <string name="section_display">Display</string>
+    <string name="section_system">System</string>
+    <string name="saver_wait">Start after</string>
+    <string name="saver_now">Show now</string>
+    <string name="never">Never</string>
+    <string name="minutes">%1$d min</string>
+    <string name="night_mode">Night mode</string>
+    <string name="weather_toggle">Weather</string>
+    <string name="control_center">Control Center</string>
+    <string name="pick_wallpaper">Wallpaper</string>
 </resources>

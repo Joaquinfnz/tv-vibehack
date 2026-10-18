@@ -38,6 +38,14 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".SaverActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@style/Theme.TvHome"
+            android:screenOrientation="landscape" />
+
         <service
             android:name=".HomeService"
             android:label="@string/app_name"

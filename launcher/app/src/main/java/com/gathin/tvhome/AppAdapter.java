@@ -69,7 +69,11 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
 
     private final Context ctx;
     private final TileListener listener;
-    private final int dockSize;
+    private int dockSize;
+    /** Loaded tiles by component, kept across reloads so returning Home does not reload every banner. */
+    private static final java.util.Map<String, Entry> CACHE = new java.util.HashMap<>();
+    /** Direction of the last D-pad move (-1, 0, 1), used to tilt the tile that receives focus. */
+    static int lastDx, lastDy;
     private final SharedPreferences prefs;
     /** Dock: the apps opened most recently from here, topped up from res/values/config.xml (dock_apps). */
     private List<String> favourites = new ArrayList<>();
@@ -101,6 +105,25 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
         recents.add(0, pkg);
         while (recents.size() > dockSize) recents.remove(recents.size() - 1);
         prefs.edit().putString("recent", android.text.TextUtils.join(",", recents)).apply();
+    }
+
+    static void clearCache() {
+        CACHE.clear();
+    }
+
+    void setDockSize(int size) {
+        dockSize = size;
+    }
+
+    /** Banner (or icon) of the app at a position, for the top shelf. */
+    Drawable bannerAt(int position) {
+        if (position < 0 || position >= items.size()) return null;
+        Entry e = items.get(position);
+        return e.banner != null ? e.banner : e.icon;
+    }
+
+    boolean hasBannerAt(int position) {
+        return position >= 0 && position < items.size() && items.get(position).banner != null;
     }
 
     void clearHidden() {
@@ -144,11 +167,19 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
             if (ri.activityInfo == null) continue;
             String pkg = ri.activityInfo.packageName;
             if (pkg.equals(ctx.getPackageName()) || hidden.contains(pkg)) continue;
+            String key = pkg + "/" + ri.activityInfo.name;
+            Entry cached = CACHE.get(key);
+            if (cached != null) {
+                fresh.add(cached);
+                continue;
+            }
             Drawable banner = ri.activityInfo.loadBanner(pm);
             if (banner == null) banner = ri.activityInfo.applicationInfo.loadBanner(pm);
             Drawable icon = ri.loadIcon(pm);
             String label = String.valueOf(ri.loadLabel(pm));
-            fresh.add(new Entry(label, new ComponentName(pkg, ri.activityInfo.name), banner, icon));
+            Entry made = new Entry(label, new ComponentName(pkg, ri.activityInfo.name), banner, icon);
+            CACHE.put(key, made);
+            fresh.add(made);
         }
         // Dock = recent apps still installed, then the configured defaults, up to the dock size.
         Set<String> installed = new HashSet<>();
@@ -326,16 +357,25 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
 
             card.setOnKeyListener((view, keyCode, event) -> {
                 if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
+                lastDx = keyCode == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : keyCode == KeyEvent.KEYCODE_DPAD_LEFT ? -1 : 0;
+                lastDy = keyCode == KeyEvent.KEYCODE_DPAD_DOWN ? 1 : keyCode == KeyEvent.KEYCODE_DPAD_UP ? -1 : 0;
                 if (keyCode != KeyEvent.KEYCODE_DPAD_UP && keyCode != KeyEvent.KEYCODE_DPAD_DOWN) return false;
                 int pos = getBindingAdapterPosition();
                 return listener != null && pos != RecyclerView.NO_POSITION && listener.onTileVerticalKey(pos, keyCode);
             });
 
+            card.setCameraDistance(9000f * density);
             card.setOnFocusChangeListener((view, focused) -> {
                 float s = focused ? FOCUS_SCALE : 1.0f;
-                view.animate().scaleX(s).scaleY(s)
-                        .setDuration(focused ? 260 : 180)
-                        .setInterpolator(new OvershootInterpolator(focused ? 1.6f : 0f))
+                if (focused) {
+                    // Depth: the tile lands tilted toward where you came from, then settles flat and raised.
+                    view.setRotationY(lastDx * 7f);
+                    view.setRotationX(-lastDy * 5f);
+                }
+                view.animate().scaleX(s).scaleY(s).rotationX(0f).rotationY(0f)
+                        .translationZ(focused ? 14f * density : 0f)
+                        .setDuration(focused ? 420 : 180)
+                        .setInterpolator(new OvershootInterpolator(focused ? 1.2f : 0f))
                         .start();
                 name.animate().alpha(focused ? 1f : 0f)
                         .translationY(focused ? density * 4f : -density * 6f)

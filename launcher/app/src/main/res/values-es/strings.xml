@@ -55,4 +55,16 @@
     <string name="bg_paine_dawn">Paine · Amanecer</string>
     <string name="bg_paine_lake">Paine · Lago</string>
     <string name="bg_paine_snow">Paine · Nieve</string>
+    <string name="section_look">Apariencia</string>
+    <string name="section_saver">Salvapantallas</string>
+    <string name="section_display">Pantalla</string>
+    <string name="section_system">Sistema</string>
+    <string name="saver_wait">Activar tras</string>
+    <string name="saver_now">Ver ahora</string>
+    <string name="never">Nunca</string>
+    <string name="minutes">%1$d min</string>
+    <string name="night_mode">Modo noche</string>
+    <string name="weather_toggle">Clima</string>
+    <string name="control_center">Centro de control</string>
+    <string name="pick_wallpaper">Fondo de pantalla</string>
 </resources>

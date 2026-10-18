@@ -2,13 +2,13 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/root"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="#FF000000">
+    android:layout_height="match_parent">
 
     <ImageView
         android:id="@+id/bg"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:contentDescription="@null"
         android:scaleType="centerCrop"
         android:src="@drawable/wallpaper" />
 
@@ -18,6 +18,16 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:alpha="0" />
+
+    <!-- Top shelf: the focused dock app's banner, large on the right, sized and placed in code. -->
+    <ImageView
+        android:id="@+id/heroBanner"
+        android:layout_width="10dp"
+        android:layout_height="10dp"
+        android:alpha="0"
+        android:scaleType="centerCrop"
+        android:elevation="18dp"
+        android:contentDescription="@null" />
 
     <!-- Top shelf: the focused dock app's name, positioned above the dock in code. -->
     <TextView
@@ -210,5 +220,17 @@
         android:layout_width="10dp"
         android:layout_height="10dp"
         android:alpha="0"
+        android:importantForAccessibility="no" />
+
+    <!-- Night mode: a dark veil over everything, faded in late at night. -->
+    <View
+        android:id="@+id/nightDim"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:elevation="40dp"
+        android:background="#FF000000"
+        android:alpha="0"
+        android:clickable="false"
+        android:focusable="false"
         android:importantForAccessibility="no" />
 </FrameLayout>

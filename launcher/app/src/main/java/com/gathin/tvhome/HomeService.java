@@ -17,6 +17,8 @@ import java.util.Set;
 public class HomeService extends AccessibilityService {
 
     private long lastLaunch;
+    private Set<String> homePkgs;
+    private long homesAt;
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
@@ -24,10 +26,14 @@ public class HomeService extends AccessibilityService {
         CharSequence pkg = event.getPackageName();
         if (pkg == null || pkg.toString().equals(getPackageName())) return;
 
-        PackageManager pm = getPackageManager();
-        List<ResolveInfo> homes = pm.queryIntentActivities(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0);
-        Set<String> homePkgs = new HashSet<>();
-        for (ResolveInfo ri : homes) homePkgs.add(ri.activityInfo.packageName);
+        long now0 = System.currentTimeMillis();
+        if (homePkgs == null || now0 - homesAt > 60_000L) {   // refresh the list of home apps at most once a minute
+            PackageManager pm = getPackageManager();
+            List<ResolveInfo> homes = pm.queryIntentActivities(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0);
+            homePkgs = new HashSet<>();
+            for (ResolveInfo ri : homes) homePkgs.add(ri.activityInfo.packageName);
+            homesAt = now0;
+        }
         if (!homePkgs.contains(pkg.toString())) return;
 
         long now = System.currentTimeMillis();
