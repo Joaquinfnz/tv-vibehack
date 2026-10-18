@@ -76,6 +76,24 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** App of the last focused tile, so focus follows it when the app list changes. */
     private static String lastFocusedKey;
     private float density;
+    private android.content.SharedPreferences prefs;
+    private ImageView bg;
+    /** 0 = black, -1 = automatic (Aurora by day, Midnight at night). */
+    private static final int[] BG_RES = {R.drawable.wallpaper, R.drawable.wp_medianoche,
+            R.drawable.wp_atardecer, R.drawable.wp_bosque, 0, -1,
+            R.drawable.wp_seda, R.drawable.wp_andes, R.drawable.wp_cristal, R.drawable.wp_grafito,
+            R.drawable.wp_costa, R.drawable.wp_niebla,
+            R.drawable.wp_paine_amanecer, R.drawable.wp_paine_lago, R.drawable.wp_paine_nieve};
+    private static final int[] BG_NAMES = {R.string.bg_aurora, R.string.bg_midnight,
+            R.string.bg_sunset, R.string.bg_forest, R.string.bg_black, R.string.bg_auto,
+            R.string.bg_silk, R.string.bg_andes, R.string.bg_crystal, R.string.bg_graphite,
+            R.string.bg_coast, R.string.bg_mist,
+            R.string.bg_paine_dawn, R.string.bg_paine_lake, R.string.bg_paine_snow};
+    private TextView weather;
+    private static final String AIRPLAY_PKG = "io.github.jqssun.airplay";
+    /** The AirPlay receiver only listens while its app has been opened; open it once per boot, then come back. */
+    private static boolean airplayStarted;
+    private static final int[] COLUMN_OPTIONS = {4, 5, 6};
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     /** Refreshes the network pill when the connection changes: at boot Wi-Fi often connects after Home is shown. */
@@ -95,6 +113,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         public void run() {
             updateGreeting();
             updateWifiLabel();
+            updateWeather();
+            applyBackground();
             handler.postDelayed(this, MINUTE_MS);
         }
     };
@@ -104,8 +124,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         density = getResources().getDisplayMetrics().density;
-        COLUMNS = Math.max(1, getResources().getInteger(R.integer.columns));
+        prefs = getSharedPreferences("tvhome", MODE_PRIVATE);
+        COLUMNS = Math.max(1, prefs.getInt("columns", getResources().getInteger(R.integer.columns)));
         liveTvPkg = getString(R.string.live_tv_package).trim();
+        bg = findViewById(R.id.bg);
+        applyBackground();
 
         root = findViewById(R.id.root);
         glass = findViewById(R.id.glass);
@@ -118,6 +141,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         ambient.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) ->
                 ambientGlow.setGradientRadius((r - l) * 0.62f));
         greeting = findViewById(R.id.greeting);
+        weather = findViewById(R.id.weather);
         btnWifi = findViewById(R.id.btnWifi);
 
         grid = findViewById(R.id.grid);
@@ -155,14 +179,29 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         springX = new SpringAnimation(glass, DynamicAnimation.TRANSLATION_X);
         springY = new SpringAnimation(glass, DynamicAnimation.TRANSLATION_Y);
         for (SpringAnimation s : new SpringAnimation[]{springX, springY}) {
-            s.setSpring(new SpringForce().setStiffness(260f).setDampingRatio(0.58f));
+            s.setSpring(new SpringForce().setStiffness(320f).setDampingRatio(0.8f));
         }
+        // Liquid feel: stretch along the direction of travel and relax as the spring settles.
+        final float[] last = {0f, 0f};
+        DynamicAnimation.OnAnimationUpdateListener stretch = (anim, value, velocity) -> {
+            float dx = glass.getTranslationX() - last[0], dy = glass.getTranslationY() - last[1];
+            last[0] = glass.getTranslationX();
+            last[1] = glass.getTranslationY();
+            float sx = Math.min(Math.abs(dx) / (60f * density), 0.10f);
+            float sy = Math.min(Math.abs(dy) / (60f * density), 0.10f);
+            glass.setScaleX(1f + sx - sy * 0.5f);
+            glass.setScaleY(1f + sy - sx * 0.5f);
+        };
+        springX.addUpdateListener(stretch);
+        springY.addUpdateListener(stretch);
+        springX.addEndListener((a, canceled, v, vel) -> { glass.setScaleX(1f); glass.setScaleY(1f); });
 
         View btnInputs = findViewById(R.id.btnInputs);
         View btnSettings = findViewById(R.id.btnSettings);
         btnInputs.setOnClickListener(v -> showInputs());
         btnWifi.setOnClickListener(v -> open(new Intent(Settings.ACTION_WIFI_SETTINGS)));
         btnSettings.setOnClickListener(v -> open(new Intent(Settings.ACTION_SETTINGS)));
+        findViewById(R.id.btnCustomize).setOnClickListener(v -> showCustomize());
 
         // Keep focus on the top bar at its ends and at the top: Android's focus finder would otherwise
         // jump to a tile far below when there is nothing in that direction.
@@ -174,6 +213,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         };
         btnInputs.setOnKeyListener(pillKeys);
         btnWifi.setOnKeyListener(pillKeys);
+        findViewById(R.id.btnCustomize).setOnKeyListener(pillKeys);
         btnSettings.setOnKeyListener(pillKeys);
 
         // Hide the glass when focus leaves the tiles.
@@ -201,6 +241,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         grid.scheduleLayoutAnimation();
         updateGreeting();
         updateWifiLabel();
+        updateWeather();
+        applyBackground();
         handler.postDelayed(minuteTick, MINUTE_MS);
 
         // Return to the app we left from, or the same slot if that app is gone. Always refocus: after
@@ -209,6 +251,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             int pos = adapter.positionOf(returnKey);
             focusTile(pos >= 0 ? pos : returnSlot);
         });
+        startAirPlayOnce();
     }
 
     @Override
@@ -238,7 +281,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // Tile rect in root coordinates, using layout positions (ignores the scale animation).
         Rect r = new Rect(0, 0, card.getWidth(), card.getHeight());
         root.offsetDescendantRectToMyCoords(card, r);
-        float pad = 6f * density;        // matches GlassView's glow inset
+        float pad = 12f * density;       // matches GlassView's shadow inset
         float w = card.getWidth() * AppAdapter.FOCUS_SCALE + 2 * pad;
         float h = card.getHeight() * AppAdapter.FOCUS_SCALE + 2 * pad;
         float x = r.exactCenterX() - w / 2f;
@@ -249,7 +292,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             lp.width = (int) w;
             lp.height = (int) h;
             glass.setLayoutParams(lp);
-            glass.setRadius(16f * density * AppAdapter.FOCUS_SCALE + pad);
+            glass.setRadius(16f * density * AppAdapter.FOCUS_SCALE);   // same corner as the tile's clip
         }
         glassTargetX = x;
         glassTargetY = y;
@@ -413,6 +456,27 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         btnWifi.setText(text);
     }
 
+    private void startAirPlayOnce() {
+        if (airplayStarted || !prefs.getBoolean("airplay_start", true)) return;
+        Intent i = getPackageManager().getLeanbackLaunchIntentForPackage(AIRPLAY_PKG);
+        if (i == null) return;
+        airplayStarted = true;
+        try {
+            startActivity(i);
+        } catch (Exception e) {
+            return;
+        }
+        handler.postDelayed(() -> startActivity(new Intent(this, MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)), 3000);
+    }
+
+    private void updateWeather() {
+        new Thread(() -> {
+            String text = Weather.fetch(this);
+            if (text != null) handler.post(() -> weather.setText(text));
+        }).start();
+    }
+
     private void open(Intent i) {
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         try {
@@ -505,6 +569,93 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         panel.animate().alpha(1f).scaleY(1f).translationY(0f).setDuration(220)
                 .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).start();
         rows.getChildAt(0).requestFocus();
+    }
+
+    private void applyBackground() {
+        int i = Math.max(0, Math.min(prefs.getInt("background", 0), BG_RES.length - 1));
+        int res = BG_RES[i];
+        if (res == -1) {
+            int hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
+            res = hour >= 7 && hour < 19 ? R.drawable.wallpaper : R.drawable.wp_medianoche;
+        }
+        if (res == 0) bg.setImageDrawable(null);
+        else bg.setImageResource(res);
+    }
+
+    /** Dropdown under the Customize pill: wallpaper, columns, hidden apps and the home-key service. */
+    private void showCustomize() {
+        View anchor = findViewById(R.id.btnCustomize);
+        View panel = getLayoutInflater().inflate(R.layout.popup_inputs, root, false);
+        LinearLayout rows = panel.findViewById(R.id.rows);
+        final PopupWindow popup = new PopupWindow(panel, (int) (260 * density), ViewGroup.LayoutParams.WRAP_CONTENT, true);
+        popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        popup.setOutsideTouchable(true);
+        popup.setAnimationStyle(0);
+        popup.setElevation(0f);
+
+        TextView[] bgStatus = new TextView[1];
+        View bgRow = settingRow(rows, R.drawable.ic_tune, getString(R.string.background),
+                getString(BG_NAMES[prefs.getInt("background", 0)]), v -> {
+                    int next = (prefs.getInt("background", 0) + 1) % BG_RES.length;
+                    prefs.edit().putInt("background", next).apply();
+                    applyBackground();
+                    bgStatus[0].setText(BG_NAMES[next]);
+                });
+        bgStatus[0] = bgRow.findViewById(R.id.status);
+        // Left/Right step through the wallpapers one by one; OK goes forward.
+        bgRow.setOnKeyListener((v, keyCode, event) -> {
+            if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
+            int step = keyCode == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : keyCode == KeyEvent.KEYCODE_DPAD_LEFT ? -1 : 0;
+            if (step == 0) return false;
+            int next = (prefs.getInt("background", 0) + step + BG_RES.length) % BG_RES.length;
+            prefs.edit().putInt("background", next).apply();
+            applyBackground();
+            bgStatus[0].setText(BG_NAMES[next]);
+            return true;
+        });
+
+        settingRow(rows, R.drawable.ic_input, getString(R.string.columns_label), String.valueOf(COLUMNS), v -> {
+            int idx = 0;
+            for (int k = 0; k < COLUMN_OPTIONS.length; k++) if (COLUMN_OPTIONS[k] == COLUMNS) idx = k;
+            prefs.edit().putInt("columns", COLUMN_OPTIONS[(idx + 1) % COLUMN_OPTIONS.length]).apply();
+            popup.dismiss();
+            recreate();
+        });
+
+        settingRow(rows, R.drawable.ic_av, getString(R.string.show_hidden), "", v -> {
+            adapter.clearHidden();
+            popup.dismiss();
+        });
+
+        TextView[] apStatus = new TextView[1];
+        View apRow = settingRow(rows, R.drawable.ic_input, getString(R.string.airplay_start),
+                getString(prefs.getBoolean("airplay_start", true) ? R.string.on : R.string.off), v -> {
+                    boolean now = !prefs.getBoolean("airplay_start", true);
+                    prefs.edit().putBoolean("airplay_start", now).apply();
+                    apStatus[0].setText(now ? R.string.on : R.string.off);
+                });
+        apStatus[0] = apRow.findViewById(R.id.status);
+
+        settingRow(rows, R.drawable.ic_settings, getString(R.string.capture_home), "", v -> {
+            popup.dismiss();
+            open(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+        });
+
+        popup.showAsDropDown(anchor, 0, (int) (10 * density), Gravity.START);
+        bgRow.requestFocus();
+    }
+
+    private View settingRow(LinearLayout rows, int icon, String title, String value, View.OnClickListener click) {
+        View row = getLayoutInflater().inflate(R.layout.item_input, rows, false);
+        ((ImageView) row.findViewById(R.id.icon)).setImageResource(icon);
+        ((TextView) row.findViewById(R.id.title)).setText(title);
+        row.findViewById(R.id.dot).setVisibility(View.GONE);
+        TextView status = row.findViewById(R.id.status);
+        if (value.isEmpty()) status.setVisibility(View.GONE);
+        else status.setText(value);
+        row.setOnClickListener(click);
+        rows.addView(row);
+        return row;
     }
 
     private void addSeparator(LinearLayout rows) {

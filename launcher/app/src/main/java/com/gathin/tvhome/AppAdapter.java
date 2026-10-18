@@ -4,6 +4,7 @@ import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
@@ -69,24 +70,72 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
     private final Context ctx;
     private final TileListener listener;
     private final int dockSize;
-    /** Dock order (res/values/config.xml, dock_apps). */
-    private final List<String> favourites;
-    /** Never shown as tiles (res/values/config.xml, hidden_apps). */
-    private final Set<String> hidden;
+    private final SharedPreferences prefs;
+    /** Dock: the apps opened most recently from here, topped up from res/values/config.xml (dock_apps). */
+    private List<String> favourites = new ArrayList<>();
+    private List<String> recents = new ArrayList<>();
+    /** Never shown as tiles: res/values/config.xml (hidden_apps) plus what the user hid. */
+    private final Set<String> hidden = new HashSet<>();
     private final List<Entry> items = new ArrayList<>();
 
     AppAdapter(Context ctx, TileListener listener, int dockSize) {
         this.ctx = ctx;
         this.listener = listener;
         this.dockSize = dockSize;
-        this.favourites = Arrays.asList(ctx.getResources().getStringArray(R.array.dock_apps));
-        this.hidden = new HashSet<>(Arrays.asList(ctx.getResources().getStringArray(R.array.hidden_apps)));
+        this.prefs = ctx.getSharedPreferences("tvhome", Context.MODE_PRIVATE);
         // Tiles keep their identity across reload(), so a focused tile stays on its app instead of
         // its view being rebound to whatever app now sits in that slot.
         setHasStableIds(true);
     }
 
+    private void loadPrefs() {
+        String r = prefs.getString("recent", "");
+        recents = new ArrayList<>(r.isEmpty() ? Collections.<String>emptyList() : Arrays.asList(r.split(",")));
+        hidden.clear();
+        hidden.addAll(Arrays.asList(ctx.getResources().getStringArray(R.array.hidden_apps)));
+        hidden.addAll(prefs.getStringSet("hidden", Collections.<String>emptySet()));
+    }
+
+    private void markRecent(String pkg) {
+        recents.remove(pkg);
+        recents.add(0, pkg);
+        while (recents.size() > dockSize) recents.remove(recents.size() - 1);
+        prefs.edit().putString("recent", android.text.TextUtils.join(",", recents)).apply();
+    }
+
+    void clearHidden() {
+        prefs.edit().remove("hidden").apply();
+        reload();
+    }
+
+    private void hideApp(String pkg) {
+        Set<String> h = new HashSet<>(prefs.getStringSet("hidden", Collections.<String>emptySet()));
+        h.add(pkg);
+        prefs.edit().putStringSet("hidden", h).apply();
+        reload();
+    }
+
+    private void showOptions(Entry e) {
+        String[] labels = {ctx.getString(R.string.hide_app), ctx.getString(R.string.app_info)};
+        new android.app.AlertDialog.Builder(ctx, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle(e.label)
+                .setItems(labels, (d, which) -> {
+                    if (which == 0) {
+                        hideApp(e.pkg);
+                    } else {
+                        Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + e.pkg));
+                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        try {
+                            ctx.startActivity(i);
+                        } catch (ActivityNotFoundException ignored) {
+                        }
+                    }
+                })
+                .show();
+    }
+
     void reload() {
+        loadPrefs();
         PackageManager pm = ctx.getPackageManager();
         Intent probe = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER);
         List<ResolveInfo> found = pm.queryIntentActivities(probe, 0);
@@ -100,6 +149,14 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
             Drawable icon = ri.loadIcon(pm);
             String label = String.valueOf(ri.loadLabel(pm));
             fresh.add(new Entry(label, new ComponentName(pkg, ri.activityInfo.name), banner, icon));
+        }
+        // Dock = recent apps still installed, then the configured defaults, up to the dock size.
+        Set<String> installed = new HashSet<>();
+        for (Entry en : fresh) installed.add(en.pkg);
+        favourites = new ArrayList<>();
+        for (String pkg : recents) if (installed.contains(pkg) && favourites.size() < dockSize) favourites.add(pkg);
+        for (String pkg : ctx.getResources().getStringArray(R.array.dock_apps)) {
+            if (installed.contains(pkg) && !favourites.contains(pkg) && favourites.size() < dockSize) favourites.add(pkg);
         }
         Collections.sort(fresh, (a, b) -> {
             int fa = favourites.indexOf(a.pkg), fb = favourites.indexOf(b.pkg);
@@ -146,17 +203,13 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
         }
         h.card.setOnClickListener(v -> launch(e));
         h.card.setOnLongClickListener(v -> {
-            Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + e.pkg));
-            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            try {
-                ctx.startActivity(i);
-            } catch (ActivityNotFoundException ignored) {
-            }
+            showOptions(e);
             return true;
         });
     }
 
     private void launch(Entry e) {
+        markRecent(e.pkg);
         Intent i = new Intent(Intent.ACTION_MAIN)
                 .addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
                 .setComponent(e.component)

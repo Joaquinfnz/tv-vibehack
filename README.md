@@ -6,6 +6,19 @@ Strip the bloatware from any Android TV or Google TV over Wi-Fi, and replace the
 screen with a clean launcher that looks like an Apple TV. No root, no cable, nothing uninstalled,
 and a one-line restore if you change your mind.
 
+> **This fork** ([Gathin23/tv-vibehack](https://github.com/Gathin23/tv-vibehack) + extras) adds to the launcher:
+> weather beside the clock, 15 wallpapers (incl. automatic day/night) and a **Customize** menu,
+> a dock with your most recent apps, hide-an-app, 4/5/6 columns, a clearer liquid-glass selector,
+> an optional accessibility service that keeps this home on top of an operator launcher
+> (no ADB needed), and AirPlay-receiver start-up. Spanish and English.
+>
+> **Install without ADB:** download `home-lite.apk` (no accessibility service, Play Protect stays quiet)
+> or `home-full.apk` from [Releases](../../releases) and sideload it (e.g. with the Downloader app).
+> **AirPlay receiver:** run `tools/get-airplay.sh` (fetches and verifies the GPL-3.0
+> [android-airplay-server](https://github.com/jqssun/android-airplay-server); not stored here).
+> Weather uses Open-Meteo and an approximate IP location from ipwho.is. See [CREDITS.md](CREDITS.md).
+> The release APKs are debug-signed.
+
 ![Before: stock Google TV home with a sponsored ad. After: the tv-vibehack launcher](docs/stock-vs-new-side.jpg)
 
 It started as an afternoon fixing my parents' Mi TV, which showed them an advert before they
